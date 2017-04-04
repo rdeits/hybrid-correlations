@@ -6,19 +6,6 @@ using DataStructures: OrderedDict
 
 include("mpc.jl")
 
-dt = 0.1
-N = 30
-time = Axis{:time}(linspace(0, (N - 1) * dt, N))
-side = Axis{:side}([:left, :right])
-state = MPC.State(0.5, -2., 0.5)
-result = MPC.run_opt(state, time, side)
-
-q = getvariable(result.model, :q)
-qlimb = getvariable(result.model, :qlimb)
-f = getvariable(result.model, :f)
-plt = plot(time.val, getvalue.(q))
-plot!(plt, time.val, getvalue.(qlimb))
-
 immutable Record
     state::MPC.State{Float64}
     contact::AxisArray{Bool, 2, Array{Bool, 2}, Tuple{Axis{:side, Array{Symbol, 1}}, Axis{:time, LinSpace{Float64}}}}
@@ -32,7 +19,7 @@ immutable Sample
     Δcost::Float64
 end
 
-function collect_data()
+function collect_data(numsamples)
     dt = 0.1
     N = 10
     time = Axis{:time}(linspace(0, (N - 1) * dt, N))
@@ -42,7 +29,6 @@ function collect_data()
     contact = AxisArray(zeros(Bool, 2, N), side, time)
     state = MPC.State(0., 0., 0.)
     result = MPC.run_opt(state, time, side, contact)
-    numsamples = 2000
     samples = AxisArray(Array{Sample}(numsamples, length(result.constraints), N - 1, 2, N),
                         Axis{:sample}(1:numsamples),
                         Axis{:constraint}(collect(keys(result.constraints))),
@@ -97,8 +83,6 @@ function collect_data()
     records, samples
 end
 
-records, samples = collect_data()
-
 function phi(samples)
     count = zeros(2, 2)
     for s in samples
@@ -115,6 +99,14 @@ function phi(samples)
         count[i, j] += 1
     end
     (count[2, 2] * count[1, 1] - count[2, 1] * count[1, 2]) / sqrt(sum(count[:, 1]) * sum(count[:, 2]) * sum(count[1, :]) * sum(count[2, :]))
+end
+
+function correlate(samples)
+    correlations = similar(samples[Axis{:sample}(1)], Float64)
+    for I in eachindex(correlations)
+        correlations[I] = phi(samples[:, I])
+    end
+    correlations
 end
 
 end
