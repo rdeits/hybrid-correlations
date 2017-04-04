@@ -1,7 +1,5 @@
 module c
 
-using Plots
-gr()
 using AxisArrays
 using JuMP
 using DataStructures: OrderedDict
@@ -44,7 +42,7 @@ function collect_data()
     contact = AxisArray(zeros(Bool, 2, N), side, time)
     state = MPC.State(0., 0., 0.)
     result = MPC.run_opt(state, time, side, contact)
-    numsamples = 1000
+    numsamples = 2000
     samples = AxisArray(Array{Sample}(numsamples, length(result.constraints), N - 1, 2, N),
                         Axis{:sample}(1:numsamples),
                         Axis{:constraint}(collect(keys(result.constraints))),
@@ -101,21 +99,22 @@ end
 
 records, samples = collect_data()
 
+function phi(samples)
+    count = zeros(2, 2)
+    for s in samples
+        if abs(s.dual) > 1e-5
+            i = 2
+        else
+            i = 1
+        end
+        if s.Δcost > -1e-5
+            j = 2
+        else
+            j = 1
+        end
+        count[i, j] += 1
+    end
+    (count[2, 2] * count[1, 1] - count[2, 1] * count[1, 2]) / sqrt(sum(count[:, 1]) * sum(count[:, 2]) * sum(count[1, :]) * sum(count[2, :]))
 end
 
-samples = c.samples[Axis{:constraint}(:force_without_contact_right), Axis{:constraint_t}(5), Axis{:contact_t}(9), Axis{:contact_side}(:right)]
-result = zeros(2, 2)
-for s in samples
-    if abs(s.dual) > 1e-5
-        i = 2
-    else
-        i = 1
-    end
-    if s.Δcost > -1e-5
-        j = 2
-    else
-        j = 1
-    end
-    result[i, j] += 1
 end
-result
