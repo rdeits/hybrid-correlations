@@ -6,13 +6,13 @@ using DataStructures: OrderedDict
 
 include("mpc.jl")
 
-immutable Record
-    state::MPC.State{Float64}
-    contact::AxisArray{Bool, 2, Array{Bool, 2}, Tuple{Axis{:side, Array{Symbol, 1}}, Axis{:time, LinSpace{Float64}}}}
-    duals::OrderedDict{Symbol, Vector{Float64}}
-    cost::Float64
-    new_costs::AxisArray{Float64, 2, Array{Float64, 2}, Tuple{Axis{:side, Array{Symbol, 1}}, Axis{:time, LinSpace{Float64}}}}
-end
+# immutable Record
+#     state::MPC.State{Float64}
+#     contact::AxisArray{Bool, 2, Array{Bool, 2}, Tuple{Axis{:side, Array{Symbol, 1}}, Axis{:time, LinSpace{Float64}}}}
+#     duals::OrderedDict{Symbol, Vector{Float64}}
+#     cost::Float64
+#     new_costs::AxisArray{Float64, 2, Array{Float64, 2}, Tuple{Axis{:side, Array{Symbol, 1}}, Axis{:time, LinSpace{Float64}}}}
+# end
 
 immutable Sample
     dual::Float64
@@ -24,7 +24,7 @@ function collect_data(numsamples)
     N = 10
     time = Axis{:time}(linspace(0, (N - 1) * dt, N))
     side = Axis{:side}([:left, :right])
-    records = Record[]
+    # records = Record[]
 
     contact = AxisArray(zeros(Bool, 2, N), side, time)
     state = MPC.State(0., 0., 0.)
@@ -36,7 +36,8 @@ function collect_data(numsamples)
                         Axis{:contact_side}([:left, :right]),
                         Axis{:contact_t}(1:N))
 
-    while length(records) < numsamples
+    sample_index = 1
+    while sample_index <= numsamples
         contact = AxisArray(rand(Bool, 2, N), side, time)
         for j in 1:N
             if all(contact[:, j])
@@ -49,7 +50,7 @@ function collect_data(numsamples)
         state = MPC.State(q0, v0, qlimb0)
         result = MPC.run_opt(state, time, side, contact)
         if result.status == :Optimal
-            duals = OrderedDict((key, getdual(value)) for (key, value) in result.constraints)
+            # duals = OrderedDict((key, getdual(value)) for (key, value) in result.constraints)
             newcosts = AxisArray(fill(Inf, 2, N), side, time)
             for i in 1:2
                 for j in 1:N
@@ -61,12 +62,12 @@ function collect_data(numsamples)
                     end
                 end
             end
-            push!(records, Record(state, contact, duals, getvalue(result.objective), newcosts))
+            # push!(records, Record(state, contact, duals, getvalue(result.objective), newcosts))
             for (constraint, duals) in result.constraints
                 for constraint_t in 1:N-1
                     for contact_side in [:left, :right]
                         for contact_t in 1:N
-                            samples[Axis{:sample}(length(records)),
+                            samples[Axis{:sample}(sample_index),
                                     Axis{:constraint}(constraint),
                                     Axis{:constraint_t}(constraint_t),
                                     Axis{:contact_side}(contact_side),
@@ -78,9 +79,10 @@ function collect_data(numsamples)
                     end
                 end
             end
+            sample_index += 1
         end
     end
-    records, samples
+    samples
 end
 
 function phi(samples)

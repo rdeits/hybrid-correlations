@@ -13,8 +13,6 @@ immutable State{T}
     qlimb::T
 end
 
-State{T}(q::T, v::T, qlimb::T) = State{T}(q, v, qlimb)
-
 immutable Result
     model::Model
     constraints::OrderedDict{Symbol, Vector{JuMP.ConstraintRef}}
