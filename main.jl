@@ -19,8 +19,8 @@ immutable Sample
     Δcost::Float64
 end
 
-function collect_data(numsamples)
-    dt = 0.1
+function collect_data(sys, numsamples)
+    dt = sys.Δt
     N = 10
     time = Axis{:time}(linspace(0, (N - 1) * dt, N))
     side = Axis{:side}([:left, :right])
@@ -28,7 +28,7 @@ function collect_data(numsamples)
 
     contact = AxisArray(zeros(Bool, 2, N), side, time)
     state = MPC.State(0., 0., 0.)
-    result = MPC.run_opt(state, time, side, contact)
+    result = MPC.run_opt(sys, state, time, side, contact)
     samples = AxisArray(Array{Sample}(numsamples, length(result.constraints), N - 1, 2, N),
                         Axis{:sample}(1:numsamples),
                         Axis{:constraint}(collect(keys(result.constraints))),
@@ -48,7 +48,7 @@ function collect_data(numsamples)
         v0 = 4 * rand() - 2
         qlimb0 = 2 * rand() - 1
         state = MPC.State(q0, v0, qlimb0)
-        result = MPC.run_opt(state, time, side, contact)
+        result = MPC.run_opt(sys, state, time, side, contact)
         if result.status == :Optimal
             # duals = OrderedDict((key, getdual(value)) for (key, value) in result.constraints)
             newcosts = AxisArray(fill(Inf, 2, N), side, time)
@@ -56,7 +56,7 @@ function collect_data(numsamples)
                 for j in 1:N
                     newcontact = copy(contact)
                     newcontact[i, j] = !newcontact[i, j]
-                    newresult = MPC.run_opt(state, time, side, newcontact)
+                    newresult = MPC.run_opt(sys, state, time, side, newcontact)
                     if newresult.status == :Optimal
                         newcosts[i, j] = getvalue(newresult.objective)
                     end
