@@ -29,12 +29,13 @@ function collect_data(sys, numsamples)
     contact = AxisArray(zeros(Bool, 2, N), side, time)
     state = MPC.State(0., 0., 0.)
     result = MPC.run_opt(sys, state, time, side, contact)
-    samples = AxisArray(Array{Sample}(numsamples, length(result.constraints), N - 1, 2, N),
+    samples = AxisArray(Array{Sample}(numsamples, length(result.constraints), N - 1, 2, N, 2),
                         Axis{:sample}(1:numsamples),
                         Axis{:constraint}(collect(keys(result.constraints))),
                         Axis{:constraint_t}(1:N-1),
                         Axis{:contact_side}([:left, :right]),
-                        Axis{:contact_t}(1:N))
+                        Axis{:contact_t}(1:N),
+                        Axis{:polarity}([:off, :on]))
 
     sample_index = 1
     while sample_index <= numsamples
@@ -76,11 +77,17 @@ function collect_data(sys, numsamples)
             for constraint_t in 1:N-1
                 for contact_side in [:left, :right]
                     for contact_t in 1:N
+                        if contact[contact_side, contact_t]
+                            polarity = Axis{:polarity}(:off)
+                        else
+                            polarity = Axis{:polarity}(:on)
+                        end
                         samples[Axis{:sample}(sample_index),
                                 Axis{:constraint}(constraint),
                                 Axis{:constraint_t}(constraint_t),
                                 Axis{:contact_side}(contact_side),
-                                Axis{:contact_t}(contact_t)] =
+                                Axis{:contact_t}(contact_t),
+                                polarity] =
                             Sample(getdual(duals[constraint_t]),
                                    newcosts[Axis{:side}(contact_side),
                                             Axis{:time}(contact_t)] - oldobjective)
@@ -93,7 +100,7 @@ function collect_data(sys, numsamples)
     samples
 end
 
-function phi(samples)
+function correlation_counts(samples)
     count = zeros(2, 2)
     for s in samples
         if abs(s.dual) > 1e-5
@@ -108,12 +115,19 @@ function phi(samples)
         end
         count[i, j] += 1
     end
+    count
+end
+
+function phi(samples)
+    count = correlation_counts(samples)
     (count[2, 2] * count[1, 1] - count[2, 1] * count[1, 2]) / sqrt(sum(count[:, 1]) * sum(count[:, 2]) * sum(count[1, :]) * sum(count[2, :]))
 end
 
 function correlate(samples)
     correlations = similar(samples[Axis{:sample}(1)], Float64)
     for I in eachindex(correlations)
+        # correlations[I] = cor([abs(s.dual) > 1e-5 for s in @view(samples[:, I])],
+        #                       [s.Δcost for s in @view(samples[:, I])])
         correlations[I] = phi(samples[:, I])
     end
     correlations
