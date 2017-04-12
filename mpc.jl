@@ -13,11 +13,10 @@ immutable State{T}
     qlimb::T
 end
 
-immutable Result
+type Result
     model::Model
     constraints::OrderedDict{Symbol, Vector{JuMP.ConstraintRef}}
     status::Symbol
-    objective::JuMP.GenericQuadExpr{Float64, JuMP.Variable}
 end
 
 immutable CTLinearSytstem{T}
@@ -88,8 +87,6 @@ function run_opt(sys::DTLinearSystem, state::State, time, side, contact_sequence
         :force_without_contact_left => @constraint(m, [i=1:N], f[:left, i] <= force_max * contact[:left, i]),
         :dynamics_q => @constraint(m, [i=1:N-1], q[i + 1] == (sys.A[1, :]' * [q[i], v[i]] .+ sys.B[1, :]' * [u[i]])[1]),
         :dynamics_v => @constraint(m, [i=1:N-1], v[i + 1] == (sys.A[2, :]' * [q[i], v[i]] + sys.B[2, :]' * [u[i]])[1])
-        # :dynamics_q => @constraint(m, [i=1:N-1], q[i + 1] == q[i] + dt[i] * v[i] + Δt[i]^2/2 * a[i]),
-        # :dynamics_v => @constraint(m, [i=1:N-1], v[i + 1] == v[i] + Δt[i] * a[i])
     )
 
     @constraints m begin
@@ -98,11 +95,37 @@ function run_opt(sys::DTLinearSystem, state::State, time, side, contact_sequence
         qlimb[1] == state.qlimb
     end
 
-    @expression m objective sum(f.^2) + 10 * sum(q.^2) + 100 * q[end]^2 + 10 * v[end]^2 + 1 * sum(diff(qlimb).^2)
-    @objective m Min objective
+    @objective m Min sum(f.^2) + 10 * sum(q.^2) + 100 * q[end]^2 + 10 * v[end]^2 + 1 * sum(diff(qlimb).^2)
 
     status = solve(m; suppress_warnings=true)
-    Result(m, constraints, status, objective)
+    Result(m, constraints, status)
+end
+
+function relax!(m::Model)
+    lb, ub = JuMP.constraintbounds(m)
+    nconstr = length(lb)
+    y = JuMP.Variable[]
+    const M = typeof(m)
+    const C = JuMP.GenericRangeConstraint{JuMP.GenericAffExpr{Float64, JuMP.Variable}}
+    
+    function addslack(i, coeff)
+        push!(y, @variable(m, objective=0, inconstraints=[JuMP.ConstraintRef{M, C}(m, i)], coefficients=[coeff], basename="y"))
+    end
+    
+    for i in 1:nconstr
+        if lb[i] == -Inf
+            addslack(i, -1.0)
+        elseif ub[i] == Inf
+            addslack(i, 1.0)
+        end
+    end
+    @objective m Min getobjective(m) + sum(y.^2)
+    m
+end
+
+function relax!(r::Result)
+    relax!(r.model)
+    r.status = solve(r.model; suppress_warnings=true)
 end
 
 end

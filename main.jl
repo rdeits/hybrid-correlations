@@ -49,38 +49,46 @@ function collect_data(sys, numsamples)
         qlimb0 = 2 * rand() - 1
         state = MPC.State(q0, v0, qlimb0)
         result = MPC.run_opt(sys, state, time, side, contact)
-        if result.status == :Optimal
-            # duals = OrderedDict((key, getdual(value)) for (key, value) in result.constraints)
-            newcosts = AxisArray(fill(Inf, 2, N), side, time)
-            for i in 1:2
-                for j in 1:N
-                    newcontact = copy(contact)
-                    newcontact[i, j] = !newcontact[i, j]
-                    newresult = MPC.run_opt(sys, state, time, side, newcontact)
-                    if newresult.status == :Optimal
-                        newcosts[i, j] = getvalue(newresult.objective)
-                    end
-                end
-            end
-            # push!(records, Record(state, contact, duals, getvalue(result.objective), newcosts))
-            for (constraint, duals) in result.constraints
-                for constraint_t in 1:N-1
-                    for contact_side in [:left, :right]
-                        for contact_t in 1:N
-                            samples[Axis{:sample}(sample_index),
-                                    Axis{:constraint}(constraint),
-                                    Axis{:constraint_t}(constraint_t),
-                                    Axis{:contact_side}(contact_side),
-                                    Axis{:contact_t}(contact_t)] =
-                                Sample(getdual(duals[constraint_t]),
-                                       newcosts[Axis{:side}(contact_side),
-                                                Axis{:time}(contact_t)] - getvalue(result.objective))
-                        end
-                    end
-                end
-            end
-            sample_index += 1
+        if result.status != :Optimal
+            MPC.relax!(result)
+            # continue
         end
+        @assert result.status == :Optimal
+        oldobjective = getvalue(getobjective(result.model))
+
+        # duals = OrderedDict((key, getdual(value)) for (key, value) in result.constraints)
+        newcosts = AxisArray(fill(Inf, 2, N), side, time)
+        for i in 1:2
+            for j in 1:N
+                newcontact = copy(contact)
+                newcontact[i, j] = !newcontact[i, j]
+                newresult = MPC.run_opt(sys, state, time, side, newcontact)
+                if newresult.status != :Optimal
+                    MPC.relax!(newresult)
+                    # continue
+                end
+                @assert newresult.status == :Optimal
+                newcosts[i, j] = getvalue(getobjective(newresult.model))
+            end
+        end
+        # push!(records, Record(state, contact, duals, getvalue(result.objective), newcosts))
+        for (constraint, duals) in result.constraints
+            for constraint_t in 1:N-1
+                for contact_side in [:left, :right]
+                    for contact_t in 1:N
+                        samples[Axis{:sample}(sample_index),
+                                Axis{:constraint}(constraint),
+                                Axis{:constraint_t}(constraint_t),
+                                Axis{:contact_side}(contact_side),
+                                Axis{:contact_t}(contact_t)] =
+                            Sample(getdual(duals[constraint_t]),
+                                   newcosts[Axis{:side}(contact_side),
+                                            Axis{:time}(contact_t)] - oldobjective)
+                    end
+                end
+            end
+        end
+        sample_index += 1
     end
     samples
 end
