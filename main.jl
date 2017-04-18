@@ -6,39 +6,40 @@ using DataStructures: OrderedDict
 
 include("mpc.jl")
 
-# immutable Record
-#     state::MPC.State{Float64}
-#     contact::AxisArray{Bool, 2, Array{Bool, 2}, Tuple{Axis{:side, Array{Symbol, 1}}, Axis{:time, LinSpace{Float64}}}}
-#     duals::OrderedDict{Symbol, Vector{Float64}}
-#     cost::Float64
-#     new_costs::AxisArray{Float64, 2, Array{Float64, 2}, Tuple{Axis{:side, Array{Symbol, 1}}, Axis{:time, LinSpace{Float64}}}}
-# end
-
-immutable Sample
-    dual::Float64
-    Δcost::Float64
+immutable Record
+    state::MPC.State{Float64}
+    contact::AxisArray{Bool, 2, Array{Bool, 2}, Tuple{Axis{:side, Array{Symbol, 1}}, Axis{:time, LinSpace{Float64}}}}
+    duals::OrderedDict{Symbol, Vector{Float64}}
+    cost::Float64
+    new_costs::AxisArray{Float64, 2, Array{Float64, 2}, Tuple{Axis{:side, Array{Symbol, 1}}, Axis{:time, LinSpace{Float64}}}}
 end
+
+# immutable Sample
+#     dual::Float64
+#     Δcost::Float64
+# end
 
 function collect_data(sys, numsamples)
     dt = sys.Δt
     N = 10
     time = Axis{:time}(linspace(0, (N - 1) * dt, N))
     side = Axis{:side}([:left, :right])
-    # records = Record[]
+    records = Record[]
 
-    contact = AxisArray(zeros(Bool, 2, N), side, time)
-    state = MPC.State(0., 0., 0.)
-    result = MPC.run_opt(sys, state, time, side, contact)
-    samples = AxisArray(Array{Sample}(numsamples, length(result.constraints), N - 1, 2, N, 2),
-                        Axis{:sample}(1:numsamples),
-                        Axis{:constraint}(collect(keys(result.constraints))),
-                        Axis{:constraint_t}(1:N-1),
-                        Axis{:contact_side}([:left, :right]),
-                        Axis{:contact_t}(1:N),
-                        Axis{:polarity}([:off, :on]))
+    # contact = AxisArray(zeros(Bool, 2, N), side, time)
+    # state = MPC.State(0., 0., 0.)
+    # result = MPC.run_opt(sys, state, time, side, contact)
+    # samples = AxisArray(Array{Sample}(numsamples, length(result.constraints), N - 1, 2, N, 2),
+    #                     Axis{:sample}(1:numsamples),
+    #                     Axis{:constraint}(collect(keys(result.constraints))),
+    #                     Axis{:constraint_t}(1:N-1),
+    #                     Axis{:contact_side}([:left, :right]),
+    #                     Axis{:contact_t}(1:N),
+    #                     Axis{:polarity}([:off, :on]))
 
-    sample_index = 1
-    while sample_index <= numsamples
+    # sample_index = 1
+    # while sample_index <= numsamples
+    while length(records) <= numsamples
         contact = AxisArray(rand(Bool, 2, N), side, time)
         for j in 1:N
             if all(contact[:, j])
@@ -52,12 +53,11 @@ function collect_data(sys, numsamples)
         result = MPC.run_opt(sys, state, time, side, contact)
         if result.status != :Optimal
             MPC.relax!(result)
-            # continue
         end
         @assert result.status == :Optimal
         oldobjective = getvalue(getobjective(result.model))
 
-        # duals = OrderedDict((key, getdual(value)) for (key, value) in result.constraints)
+        duals = OrderedDict((key, getdual(value)) for (key, value) in result.constraints)
         newcosts = AxisArray(fill(Inf, 2, N), side, time)
         for i in 1:2
             for j in 1:N
@@ -66,38 +66,54 @@ function collect_data(sys, numsamples)
                 newresult = MPC.run_opt(sys, state, time, side, newcontact)
                 if newresult.status != :Optimal
                     MPC.relax!(newresult)
-                    # continue
                 end
                 @assert newresult.status == :Optimal
                 newcosts[i, j] = getvalue(getobjective(newresult.model))
             end
         end
-        # push!(records, Record(state, contact, duals, getvalue(result.objective), newcosts))
-        for (constraint, duals) in result.constraints
-            for constraint_t in 1:N-1
-                for contact_side in [:left, :right]
-                    for contact_t in 1:N
-                        if contact[contact_side, contact_t]
-                            polarity = Axis{:polarity}(:off)
-                        else
-                            polarity = Axis{:polarity}(:on)
-                        end
-                        samples[Axis{:sample}(sample_index),
-                                Axis{:constraint}(constraint),
-                                Axis{:constraint_t}(constraint_t),
-                                Axis{:contact_side}(contact_side),
-                                Axis{:contact_t}(contact_t),
-                                polarity] =
-                            Sample(getdual(duals[constraint_t]),
-                                   newcosts[Axis{:side}(contact_side),
-                                            Axis{:time}(contact_t)] - oldobjective)
-                    end
-                end
-            end
-        end
-        sample_index += 1
+        push!(records, Record(state, contact, duals, oldobjective, newcosts))
+        # for (constraint, duals) in result.constraints
+        #     for constraint_t in 1:N-1
+        #         for contact_side in [:left, :right]
+        #             for contact_t in 1:N
+        #                 if contact[contact_side, contact_t]
+        #                     polarity = Axis{:polarity}(:off)
+        #                 else
+        #                     polarity = Axis{:polarity}(:on)
+        #                 end
+        #                 samples[Axis{:sample}(sample_index),
+        #                         Axis{:constraint}(constraint),
+        #                         Axis{:constraint_t}(constraint_t),
+        #                         Axis{:contact_side}(contact_side),
+        #                         Axis{:contact_t}(contact_t),
+        #                         polarity] =
+        #                     Sample(getdual(duals[constraint_t]),
+        #                            newcosts[Axis{:side}(contact_side),
+        #                                     Axis{:time}(contact_t)] - oldobjective)
+        #             end
+        #         end
+        #     end
+        # end
+        # sample_index += 1
     end
-    samples
+    # samples
+    records
+end
+
+immutable Example
+    contact::BitArray{1}
+    duals::BitArray{1}
+    best_action::Int
+end
+
+function Base.convert(::Type{Example}, r::Record)
+    contact = vec(r.contact)
+    duals = BitArray{1}()
+    for (k, v) in r.duals
+        append!(duals, abs.(v) .> 1e-5)
+    end
+    best_action = indmin(vec(r.new_costs))
+    Example(contact, duals, best_action)
 end
 
 function correlation_counts(samples)
