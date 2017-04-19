@@ -127,65 +127,6 @@ function solve!(model::MPCModel, state::State; contact_sequence=nothing, relax=f
     Result(model, status)
 end
 
-
-# function run_opt(sys::DTLinearSystem, state::State, time, side, contact_sequence=nothing)
-#     m = Model(solver=GurobiSolver(OutputFlag=0))
-#     N = length(time)
-#     Δt = time[2:end] - time[1:end-1]
-#     @assert all(isapprox.(Δt, sys.Δt))
-#     wall_pos = 1
-#     limb_length = 1.05
-#     force_max = 100
-#     v_max = 10
-#     vlimb_max = 10
-
-#     @axis_variables(m, -wall_pos <= q[time] <= wall_pos)
-#     @axis_variables(m, v[time])
-#     @axis_variables(m, -wall_pos <= qlimb[time] <= wall_pos)
-#     @axis_variables(m, -force_max <= f[side, time] <= force_max)
-
-#     if contact_sequence !== nothing
-#         @axis_variables(m, contact[side, time])
-#         for s in [:left, :right]
-#             for t in 1:N
-#                 JuMP.fix(contact[s, t], contact_sequence[s, t])
-#             end
-#         end
-#     else
-#         @axis_variables(m, contact[side, time], category=:Bin)
-#     end
-
-#     u = f[:left, :] .+ f[:right, :]
-
-#     constraints = OrderedDict(
-#         :limb_ub => @constraint(m, [i=1:N], qlimb[i] - q[i] <= limb_length),
-#         :limb_lb => @constraint(m, [i=1:N], -(qlimb[i] - q[i]) <= limb_length),
-#         :v_ub => @constraint(m, [i=1:N], v[i] <= v_max),
-#         :v_lb => @constraint(m, [i=1:N], -v[i] <= v_max),
-#         :vlimb_ub => @constraint(m, [i=1:N-1], qlimb[i + 1] - qlimb[i] <= vlimb_max * Δt[i]),
-#         :vlimb_lb => @constraint(m, [i=1:N-1], -(qlimb[i + 1] - qlimb[i]) <= vlimb_max * Δt[i]),
-#         :contact_at_distance_right => @constraint(m, [i=1:N-1], 1 - qlimb[i + 1] <= 2 * (1 - contact[:right, i])),
-#         :contact_at_distance_left => @constraint(m, [i=1:N-1], qlimb[i + 1] - (-1) <= 2 * (1 - contact[:left, i])),
-#         :normal_force_right => @constraint(m, [i=1:N], f[:right, i] <= 0),
-#         :force_without_contact_right => @constraint(m, [i=1:N], -f[:right, i] <= force_max * contact[:right, i]),
-#         :normal_force_left => @constraint(m, [i=1:N], -f[:left, i] <= 0),
-#         :force_without_contact_left => @constraint(m, [i=1:N], f[:left, i] <= force_max * contact[:left, i]),
-#         :dynamics_q => @constraint(m, [i=1:N-1], q[i + 1] == (sys.A[1, :]' * [q[i], v[i]] .+ sys.B[1, :]' * [u[i]])[1]),
-#         :dynamics_v => @constraint(m, [i=1:N-1], v[i + 1] == (sys.A[2, :]' * [q[i], v[i]] + sys.B[2, :]' * [u[i]])[1])
-#     )
-
-#     @constraints m begin
-#         q[1] == state.q
-#         v[1] == state.v
-#         qlimb[1] == state.qlimb
-#     end
-
-#     @objective m Min sum(f.^2) + 10 * sum(q.^2) + 100 * q[end]^2 + 10 * v[end]^2 + 1 * sum(diff(qlimb).^2)
-
-#     status = solve(m; suppress_warnings=true)
-#     Result(m, constraints, status)
-# end
-
 function relax!(m::Model)
     lb, ub = JuMP.constraintbounds(m)
     nconstr = length(lb)
