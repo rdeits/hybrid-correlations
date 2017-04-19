@@ -26,8 +26,9 @@ function collect_data(sys, numsamples)
     side = Axis{:side}([:left, :right])
     records = Record[]
 
-    # contact = AxisArray(zeros(Bool, 2, N), side, time)
-    # state = MPC.State(0., 0., 0.)
+    contact = AxisArray(zeros(Bool, 2, N), side, time)
+    state = MPC.State(0., 0., 0.)
+    model = MPC.create_model(sys, time, side)
     # result = MPC.run_opt(sys, state, time, side, contact)
     # samples = AxisArray(Array{Sample}(numsamples, length(result.constraints), N - 1, 2, N, 2),
     #                     Axis{:sample}(1:numsamples),
@@ -50,25 +51,31 @@ function collect_data(sys, numsamples)
         v0 = 4 * rand() - 2
         qlimb0 = 2 * rand() - 1
         state = MPC.State(q0, v0, qlimb0)
-        result = MPC.run_opt(sys, state, time, side, contact)
+        result = MPC.solve!(model, state; contact_sequence=contact)
+        # result = MPC.run_opt(sys, state, time, side, contact)
         if result.status != :Optimal
-            MPC.relax!(result)
+            result = MPC.solve!(model, state; contact_sequence=contact, relax=true)
+            # MPC.relax!(result)
         end
+        @assert result.model.m === model.m
         @assert result.status == :Optimal
-        oldobjective = getvalue(getobjective(result.model))
+        oldobjective = getvalue(getobjective(result.model.m))
 
-        duals = OrderedDict((key, getdual(value)) for (key, value) in result.constraints)
+        duals = OrderedDict((key, getdual(value)) for (key, value) in result.model.constraints)
         newcosts = AxisArray(fill(Inf, 2, N), side, time)
         for i in 1:2
             for j in 1:N
                 newcontact = copy(contact)
                 newcontact[i, j] = !newcontact[i, j]
-                newresult = MPC.run_opt(sys, state, time, side, newcontact)
+                newresult = MPC.solve!(model, state; contact_sequence=newcontact)
+                # newresult = MPC.run_opt(sys, state, time, side, newcontact)
                 if newresult.status != :Optimal
-                    MPC.relax!(newresult)
+                    newresult = MPC.solve!(model, state; contact_sequence=newcontact, relax=true)
+                    # MPC.relax!(newresult)
                 end
                 @assert newresult.status == :Optimal
-                newcosts[i, j] = getvalue(getobjective(newresult.model))
+                newcosts[i, j] = getvalue(getobjective(newresult.model.m))
+                @assert newresult.model.m === model.m
             end
         end
         push!(records, Record(state, contact, duals, oldobjective, newcosts))
