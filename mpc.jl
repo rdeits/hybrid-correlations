@@ -59,7 +59,7 @@ function discretize{T}(s::CTLinearSytstem{T}, Δt)
     DTLinearSystem{T}(A, B, Δt)
 end
 
-function create_model(sys::DTLinearSystem, time, side, binary_contact=false)
+function create_model(sys::DTLinearSystem, time, side)
     m = Model(solver=GurobiSolver(OutputFlag=0))
     N = length(time)
     Δt = time[2:end] - time[1:end-1]
@@ -75,11 +75,7 @@ function create_model(sys::DTLinearSystem, time, side, binary_contact=false)
     @axis_variables(m, -wall_pos <= qlimb[time] <= wall_pos)
     @axis_variables(m, -force_max <= f[side, time] <= force_max)
 
-    if binary_contact
-        @axis_variables(m, contact[side, time], category=:Bin)
-    else
-        @axis_variables(m, contact[side, time])
-    end
+    @axis_variables(m, contact[side, time], category=:Bin)
 
     u = f[:left, :] .+ f[:right, :]
 
@@ -107,7 +103,7 @@ function create_model(sys::DTLinearSystem, time, side, binary_contact=false)
     MPCModel(m, constraints, q, v, qlimb, contact, slack)
 end
 
-function dummy_model(time, side, binary_contact=false)
+function dummy_model(time, side)
     m = Model(solver=GurobiSolver(OutputFlag=0))
     N = length(time)
 
@@ -116,11 +112,7 @@ function dummy_model(time, side, binary_contact=false)
     @axis_variables(m, qlimb[time])
     @axis_variables(m, f[side, time])
 
-    if binary_contact
-        @axis_variables(m, contact[side, time], category=:Bin)
-    else
-        @axis_variables(m, contact[side, time])
-    end
+    @axis_variables(m, contact[side, time], category=:Bin)
 
     rows = 14 * N
     vars = vcat(vec(q), vec(v), vec(qlimb), vec(f), vec(contact[:right, :]), vec(contact[:left, :]))

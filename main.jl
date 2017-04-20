@@ -3,13 +3,14 @@ module c
 using AxisArrays
 using JuMP
 using DataStructures: OrderedDict
+using LIBSVM
 
 include("mpc.jl")
 
 immutable Record
     state::MPC.State{Float64}
     contact::AxisArray{Bool, 2, Array{Bool, 2}, Tuple{Axis{:side, Array{Symbol, 1}}, Axis{:time, LinSpace{Float64}}}}
-    duals::OrderedDict{Symbol, Vector{Float64}}
+    duals::Vector{Float64}
     cost::Float64
     new_costs::AxisArray{Float64, 2, Array{Float64, 2}, Tuple{Axis{:side, Array{Symbol, 1}}, Axis{:time, LinSpace{Float64}}}}
 end
@@ -34,11 +35,11 @@ function collect_data(model::MPC.MPCModel, numsamples::Integer)
 
     while length(records) <= numsamples
         contact = AxisArray(rand(Bool, 2, N), side, time)
-        for j in 1:N
-            if all(contact[:, j])
-                contact[rand(1:2), j] = false
-            end
-        end
+        # for j in 1:N
+        #     if all(contact[:, j])
+        #         contact[rand(1:2), j] = false
+        #     end
+        # end
         q0 = 2 * rand() - 1
         v0 = 4 * rand() - 2
         qlimb0 = 2 * rand() - 1
@@ -53,7 +54,7 @@ function collect_data(model::MPC.MPCModel, numsamples::Integer)
         @assert result.status == :Optimal
         oldobjective = getvalue(getobjective(result.model.m))
 
-        duals = OrderedDict((key, getdual(value)) for (key, value) in result.model.constraints)
+        duals = model.m.linconstrDuals
         newcosts = AxisArray(fill(Inf, 2, N), side, time)
         for i in 1:2
             for j in 1:N
@@ -107,10 +108,7 @@ end
 
 function Base.convert(::Type{Example}, r::Record)
     contact = vec(r.contact)
-    duals = BitArray{1}()
-    for (k, v) in r.duals
-        append!(duals, abs.(v) .> 1e-5)
-    end
+    duals = abs.(r.duals) .> 1e-5
     best_action = indmin(vec(r.new_costs))
     Example(contact, duals, best_action)
 end
@@ -147,5 +145,6 @@ function correlate(samples)
     end
     correlations
 end
+
 
 end
