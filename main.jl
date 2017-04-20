@@ -19,27 +19,19 @@ end
 #     Δcost::Float64
 # end
 
-function collect_data(sys, numsamples)
-    dt = sys.Δt
-    N = 10
-    time = Axis{:time}(linspace(0, (N - 1) * dt, N))
-    side = Axis{:side}([:left, :right])
+
+
+function collect_data(model::MPC.MPCModel, numsamples::Integer)
+    # dt = sys.Δt
+    # N = 10
+    # time = Axis{:time}(linspace(0, (N - 1) * dt, N))
+    # side = Axis{:side}([:left, :right])
     records = Record[]
 
-    contact = AxisArray(zeros(Bool, 2, N), side, time)
-    state = MPC.State(0., 0., 0.)
-    model = MPC.create_model(sys, time, side)
-    # result = MPC.run_opt(sys, state, time, side, contact)
-    # samples = AxisArray(Array{Sample}(numsamples, length(result.constraints), N - 1, 2, N, 2),
-    #                     Axis{:sample}(1:numsamples),
-    #                     Axis{:constraint}(collect(keys(result.constraints))),
-    #                     Axis{:constraint_t}(1:N-1),
-    #                     Axis{:contact_side}([:left, :right]),
-    #                     Axis{:contact_t}(1:N),
-    #                     Axis{:polarity}([:off, :on]))
+    # model = MPC.create_model(sys, time, side)
+    side, time = axes(MPC.contactvars(model))
+    N = length(time)
 
-    # sample_index = 1
-    # while sample_index <= numsamples
     while length(records) <= numsamples
         contact = AxisArray(rand(Bool, 2, N), side, time)
         for j in 1:N

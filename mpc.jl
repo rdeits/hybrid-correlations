@@ -23,6 +23,8 @@ immutable MPCModel{Q, V, QL, C}
     slack::Vector{JuMP.Variable}
 end
 
+contactvars(m::MPCModel) = m.contact
+
 type Result
     model::MPCModel
     status::Symbol
@@ -103,6 +105,40 @@ function create_model(sys::DTLinearSystem, time, side, binary_contact=false)
     slack = relax!(m)
 
     MPCModel(m, constraints, q, v, qlimb, contact, slack)
+end
+
+function dummy_model(time, side, binary_contact=false)
+    m = Model(solver=GurobiSolver(OutputFlag=0))
+    N = length(time)
+
+    @axis_variables(m, q[time])
+    @axis_variables(m, v[time])
+    @axis_variables(m, qlimb[time])
+    @axis_variables(m, f[side, time])
+
+    if binary_contact
+        @axis_variables(m, contact[side, time], category=:Bin)
+    else
+        @axis_variables(m, contact[side, time])
+    end
+
+    rows = 14 * N
+    vars = vcat(vec(q), vec(v), vec(qlimb), vec(f), vec(contact[:right, :]), vec(contact[:left, :]))
+    nvars = length(vars)
+    density = 2 / nvars
+    for i in 1:rows
+        a = zeros(nvars)
+        for j in 1:rand(1:3)
+            a[rand(1:nvars)] = randn()
+        end
+        @constraint(m, (a' * vars)[1] <= randn())
+    end
+
+    @objective m Min sum(f.^2) + 10 * sum(q.^2) + 100 * q[end]^2 + 10 * v[end]^2 + 1 * sum(diff(qlimb).^2)
+
+    slack = relax!(m)
+
+    MPCModel(m, OrderedDict{Symbol, Vector{JuMP.ConstraintRef}}(), q, v, qlimb, contact, slack)
 end
 
 function solve!(model::MPCModel, state::State; contact_sequence=nothing, relax=false)
