@@ -3,6 +3,7 @@ module MPC
 using JuMP
 using Gurobi: GurobiSolver
 using DataStructures: OrderedDict
+using AxisArrays
 
 include("axisvars.jl")
 using .AxisVars: @axis_variables
@@ -13,13 +14,15 @@ immutable State{T}
     qlimb::T
 end
 
-immutable MPCModel{Q, V, QL, C}
+typealias VarVector AxisArray{Variable, 1, Vector{Variable}, Tuple{Axis{:time, LinSpace{Float64}}}}
+
+immutable MPCModel
     m::Model
     constraints::OrderedDict{Symbol, Vector{JuMP.ConstraintRef}}
-    q::Q
-    v::V
-    qlimb::QL
-    contact::C
+    q::VarVector
+    v::VarVector
+    qlimb::VarVector
+    contact::AxisArray{Variable, 2, Matrix{Variable}, Tuple{Axis{:side, Vector{Symbol}}, Axis{:time, LinSpace{Float64}}}}
     slack::Vector{JuMP.Variable}
 end
 
