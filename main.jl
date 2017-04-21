@@ -93,7 +93,7 @@ function phi(samples)
         else
             i = 1
         end
-        if s.Δcost > -1e-5
+        if s.Δcost < -1e-5
             j = 2
         else
             j = 1
