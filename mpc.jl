@@ -18,7 +18,6 @@ typealias VarVector AxisArray{Variable, 1, Vector{Variable}, Tuple{Axis{:time, L
 
 immutable MPCModel
     m::Model
-    constraints::OrderedDict{Symbol, Vector{JuMP.ConstraintRef}}
     q::VarVector
     v::VarVector
     qlimb::VarVector
@@ -82,28 +81,27 @@ function create_model(sys::DTLinearSystem, time, side)
 
     u = f[:left, :] .+ f[:right, :]
 
-    constraints = OrderedDict(
-        :limb_ub => @constraint(m, [i=1:N], qlimb[i] - q[i] <= limb_length),
-        :limb_lb => @constraint(m, [i=1:N], -(qlimb[i] - q[i]) <= limb_length),
-        :v_ub => @constraint(m, [i=1:N], v[i] <= v_max),
-        :v_lb => @constraint(m, [i=1:N], -v[i] <= v_max),
-        :vlimb_ub => @constraint(m, [i=1:N-1], qlimb[i + 1] - qlimb[i] <= vlimb_max * Δt[i]),
-        :vlimb_lb => @constraint(m, [i=1:N-1], -(qlimb[i + 1] - qlimb[i]) <= vlimb_max * Δt[i]),
-        :contact_at_distance_right => @constraint(m, [i=1:N-1], 1 - qlimb[i + 1] <= 2 * (1 - contact[:right, i])),
-        :contact_at_distance_left => @constraint(m, [i=1:N-1], qlimb[i + 1] - (-1) <= 2 * (1 - contact[:left, i])),
-        :normal_force_right => @constraint(m, [i=1:N], f[:right, i] <= 0),
-        :force_without_contact_right => @constraint(m, [i=1:N], -f[:right, i] <= force_max * contact[:right, i]),
-        :normal_force_left => @constraint(m, [i=1:N], -f[:left, i] <= 0),
-        :force_without_contact_left => @constraint(m, [i=1:N], f[:left, i] <= force_max * contact[:left, i]),
-        :dynamics_q => @constraint(m, [i=1:N-1], q[i + 1] == (sys.A[1, :]' * [q[i], v[i]] .+ sys.B[1, :]' * [u[i]])[1]),
-        :dynamics_v => @constraint(m, [i=1:N-1], v[i + 1] == (sys.A[2, :]' * [q[i], v[i]] + sys.B[2, :]' * [u[i]])[1])
-    )
+    @constraint(m, single_contact[i=1:N], sum(contact[Axis{:side}(:), Axis{:time}(i)]) <= 1)
+    @constraint(m, limb_ub[i=1:N], qlimb[i] - q[i] <= limb_length)
+    @constraint(m, limb_lb[i=1:N], -(qlimb[i] - q[i]) <= limb_length)
+    @constraint(m, v_ub[i=1:N], v[i] <= v_max)
+    @constraint(m, v_lb[i=1:N], -v[i] <= v_max)
+    @constraint(m, vlimb_ub[i=1:N-1], qlimb[i + 1] - qlimb[i] <= vlimb_max * Δt[i])
+    @constraint(m, vlimb_lb[i=1:N-1], -(qlimb[i + 1] - qlimb[i]) <= vlimb_max * Δt[i])
+    @constraint(m, contact_at_distance_right[i=1:N-1], 1 - qlimb[i + 1] <= 2 * (1 - contact[:right, i]))
+    @constraint(m, contact_at_distance_left[i=1:N-1], qlimb[i + 1] - (-1) <= 2 * (1 - contact[:left, i]))
+    @constraint(m, normal_force_right[i=1:N], f[:right, i] <= 0)
+    @constraint(m, force_without_contact_right[i=1:N], -f[:right, i] <= force_max * contact[:right, i])
+    @constraint(m, normal_force_left[i=1:N], -f[:left, i] <= 0)
+    @constraint(m, force_without_contact_left[i=1:N], f[:left, i] <= force_max * contact[:left, i])
+    @constraint(m, dynamics_q[i=1:N-1], q[i + 1] == (sys.A[1, :]' * [q[i], v[i]] .+ sys.B[1, :]' * [u[i]])[1])
+    @constraint(m, dynamics_v[i=1:N-1], v[i + 1] == (sys.A[2, :]' * [q[i], v[i]] + sys.B[2, :]' * [u[i]])[1])
 
     @objective m Min sum(f.^2) + 10 * sum(q.^2) + 100 * q[end]^2 + 10 * v[end]^2 + 1 * sum(diff(qlimb).^2)
 
     slack = relax!(m)
 
-    MPCModel(m, constraints, q, v, qlimb, contact, slack)
+    MPCModel(m, q, v, qlimb, contact, slack)
 end
 
 function dummy_model(time, side)
@@ -148,10 +146,10 @@ function solve!(model::MPCModel, state::State; contact_sequence=nothing, relax=f
 
     if relax
         setlowerbound.(model.slack, 0)
-        setupperbound.(model.slack, 0)
+        setupperbound.(model.slack, Inf)
     else
         setlowerbound.(model.slack, 0)
-        setupperbound.(model.slack, Inf)
+        setupperbound.(model.slack, 0)
     end
 
     status = solve(model.m; suppress_warnings=true)
